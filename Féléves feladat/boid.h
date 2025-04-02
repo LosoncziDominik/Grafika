@@ -2,6 +2,9 @@
 #define BOID_H
 
 #include <SDL2/SDL.h>
+#include <stdbool.h>
+#include <SDL2/SDL_ttf.h>
+#include <stdio.h>
 
 #define NUM_BOIDS 300
 #define SCREEN_WIDTH 1200
@@ -13,9 +16,10 @@
 #define COHESION_WEIGHT 0.05
 #define ALIGNMENT_WEIGHT 0.04
 #define SEPARATION_WEIGHT 0.03
-#define TURNING_RATE 0.05
+#define TURNING_RATE 0.1
 #define SPEED_SMOOTHING 0.5
-#define ROTATION_LIMIT 0.2
+#define PLAYER_SPEED 5.0
+#define MAX_BLOOD 1000
 
 
 /**
@@ -24,7 +28,25 @@
 typedef struct {
     float x, y;
     float vx, vy;
+    bool alive;
 } Boid;
+
+typedef struct {
+    float x, y;
+    float vx, vy;
+    float angle;
+    int counter;
+} Player;
+
+typedef struct{
+    float x, y;
+    SDL_Color color;
+    bool active;
+} Blood;
+
+extern SDL_Event event;
+
+extern Player player;
 
 extern Boid boids[NUM_BOIDS];
 
@@ -33,14 +55,28 @@ extern Boid boids[NUM_BOIDS];
  */
 void init_boids();
 
+void init_player();
+
+void update_player();
+
 /**
  * Updating the boid's behavior
  */
-void update_boids();
+void update_boids(SDL_Renderer* renderer);
 
 /**
  * Rendering the screen
  */
 void render_boids(SDL_Renderer* renderer);
+
+void render_player(SDL_Renderer* renderer);
+
+void warp(float* x, float* y);
+
+void draw_score(SDL_Renderer* renderer, const char* score, int x, int y, TTF_Font* font, SDL_Color color);
+
+int scoreCounter();
+
+void render_blood(SDL_Renderer* renderer);
 
 #endif

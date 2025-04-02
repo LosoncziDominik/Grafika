@@ -3,6 +3,10 @@
 #include <stdlib.h>
 
 Boid boids[NUM_BOIDS];
+Player player;
+Blood blood_drops[MAX_BLOOD];
+int bloodCount = 0;
+
 
 void init_boids() {
     for (int i = 0; i < NUM_BOIDS; i++) {
@@ -10,10 +14,18 @@ void init_boids() {
         boids[i].y = rand() % SCREEN_HEIGHT;
         boids[i].vx = ((rand() % 200) / 100.0f - 1) * MAX_SPEED;
         boids[i].vy = ((rand() % 200) / 100.0f - 1) * MAX_SPEED;
+        boids[i].alive = true;
     }
 }
 
-void update_boids() {
+void init_player(){
+    player.x = SCREEN_WIDTH / 2;
+    player.y = SCREEN_HEIGHT * 3 / 4;
+    player.vx = 0;
+    player.vy = 0;
+}
+
+void update_boids(SDL_Renderer* renderer) {
     for (int i = 0; i < NUM_BOIDS; i++) {
         float avgX = 0, avgY = 0;
         float avgVX = 0, avgVY = 0;
@@ -25,6 +37,10 @@ void update_boids() {
                 float dx = boids[j].x - boids[i].x;
                 float dy = boids[j].y - boids[i].y;
                 float dist = sqrt(dx * dx + dy * dy);
+                
+                float pdx = player.x - boids[i].x;
+                float pdy = player.y - boids[i].y;
+                float pdist = sqrt(pdx * pdx + pdy * pdy);
 
                 if (dist < VIEW_RADIUS) {
                     avgX += boids[j].x;
@@ -37,6 +53,14 @@ void update_boids() {
                 if (dist < SEPARATION_RADIUS) {
                     sepX -= dx;
                     sepY -= dy;
+                }
+
+                if (pdist < VIEW_RADIUS){
+                    float runx = -pdx / pdist;
+                    float runy = -pdy / pdist;
+
+                    boids[i].vx = runx * 1.5;
+                    boids[i].vy = runy * 1.5;
                 }
             }
         }
@@ -74,24 +98,124 @@ void update_boids() {
         boids[i].x += boids[i].vx;
         boids[i].y += boids[i].vy;
 
-        if (boids[i].x < 0) boids[i].x += SCREEN_WIDTH;
-        if (boids[i].x >= SCREEN_WIDTH) boids[i].x -= SCREEN_WIDTH;
-        if (boids[i].y < 0) boids[i].y += SCREEN_HEIGHT;
-        if (boids[i].y >= SCREEN_HEIGHT) boids[i].y -= SCREEN_HEIGHT;
+        warp(&boids[i].x, &boids[i].y);
+
+        if (fabs(boids[i].x - player.x ) < 10 && fabs(boids[i].y - player.y ) < 10){
+            boids[i].alive = false;
+            //blood(renderer, &boids[i].x, &boids[i].y);
+
+            if(bloodCount < MAX_BLOOD){
+                blood_drops[bloodCount].x = boids[i].x + rand() % 10 - 3;;
+                blood_drops[bloodCount].y = boids[i].y + rand() % 10 - 3;;
+                blood_drops[bloodCount].active = true;
+                bloodCount++;
+            }
+        }
+
+       
+
     }
 }
+
+void update_player() {
+    const Uint8* keystates = SDL_GetKeyboardState(NULL);
+    float vx = 0, vy = 0;
+
+    if (keystates[SDL_SCANCODE_W]) vy -= 1;
+    if (keystates[SDL_SCANCODE_S]) vy += 1;
+    if (keystates[SDL_SCANCODE_A]) vx -= 1;
+    if (keystates[SDL_SCANCODE_D]) vx += 1;
+
+    float norm = sqrt(vx * vx + vy * vy);
+    if (norm > 0) {
+        // Normalizálás és sebesség hozzárendelés
+        vx = (vx / norm) * PLAYER_SPEED;
+        vy = (vy / norm) * PLAYER_SPEED;
+
+        player.vx += (vx - player.vx) * TURNING_RATE;
+        player.vy += (vy - player.vy) * TURNING_RATE;
+
+        player.x += vx;
+        player.y += vy;
+
+        player.angle = atan2(player.vy, player.vx);
+
+    }
+
+    warp(&player.x, &player.y);
+
+    player.counter = scoreCounter();
+}
+
 
 void render_boids(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     
     for (int i = 0; i < NUM_BOIDS; i++) {
-        float angle = atan2(boids[i].vy, boids[i].vx);
+        if(boids[i].alive == true){
 
-        SDL_Point p1 = { (int)(boids[i].x + cos(angle) * 8), (int)(boids[i].y + sin(angle) * 8) };
-        SDL_Point p2 = { (int)(boids[i].x + cos(angle + 2.5) * 5), (int)(boids[i].y + sin(angle + 2.5) * 5) };
-        SDL_Point p3 = { (int)(boids[i].x + cos(angle - 2.5) * 5), (int)(boids[i].y + sin(angle - 2.5) * 5) };
+            float angle = atan2(boids[i].vy, boids[i].vx);
 
-        SDL_Point triangle[4] = { p1, p2, p3, p1 };
-        SDL_RenderDrawLines(renderer, triangle, 4);
+            SDL_Point p1 = { (int)(boids[i].x + cos(angle) * 8), (int)(boids[i].y + sin(angle) * 8) };
+            SDL_Point p2 = { (int)(boids[i].x + cos(angle + 2.5) * 5), (int)(boids[i].y + sin(angle + 2.5) * 5) };
+            SDL_Point p3 = { (int)(boids[i].x + cos(angle - 2.5) * 5), (int)(boids[i].y + sin(angle - 2.5) * 5) };
+    
+            SDL_Point triangle[4] = { p1, p2, p3, p1 };
+            SDL_RenderDrawLines(renderer, triangle, 4);
+        }
+        
+    }
+}
+
+void render_player(SDL_Renderer* renderer){
+    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+
+    player.angle = atan2(player.vy, player.vx);
+
+    SDL_Point p1 = { (int)(player.x + cos(player.angle) * 8), (int)(player.y + sin(player.angle) * 8) };
+    SDL_Point p2 = { (int)(player.x + cos(player.angle + 2.5) * 5), (int)(player.y + sin(player.angle + 2.5) * 5) };
+    SDL_Point p3 = { (int)(player.x + cos(player.angle - 2.5) * 5), (int)(player.y + sin(player.angle - 2.5) * 5) };
+
+    SDL_Point triangle[4] = { p1, p2, p3, p1 };
+    SDL_RenderDrawLines(renderer, triangle, 4);
+}
+
+void warp (float* x, float* y){
+    if (*x < 0) *x += SCREEN_WIDTH;
+    if (*x >= SCREEN_WIDTH) *x -= SCREEN_WIDTH;
+    if (*y < 0) *y += SCREEN_HEIGHT;
+    if (*y >= SCREEN_HEIGHT) *y -= SCREEN_HEIGHT;
+}
+
+void draw_score(SDL_Renderer* renderer, const char* score, int x, int y, TTF_Font* font, SDL_Color color){
+    SDL_Surface* surface = TTF_RenderText_Blended(font, score, color);
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+
+    SDL_Rect dstrect = { x, y, surface->w, surface->h};
+    SDL_RenderCopy(renderer, texture, NULL, &dstrect);
+
+    SDL_FreeSurface(surface);
+    SDL_DestroyTexture(texture);
+}
+
+int scoreCounter(){
+    int counter = 0;
+
+    for(int i =0; i < NUM_BOIDS; i++) if(!boids[i].alive) counter++;
+
+    return counter;
+}
+
+void render_blood(SDL_Renderer* renderer){
+    SDL_SetRenderDrawColor(renderer, 200, 0, 0, 180);
+
+    for (int i = 0; i < bloodCount; i++)
+    {
+        if(blood_drops[i].active){
+            for (int j = 0; j < 10; j++)
+            {
+                SDL_RenderDrawPoint(renderer, (int)(blood_drops[i].x), (int)(blood_drops[i].y));
+            }
+        }
     }
 }
