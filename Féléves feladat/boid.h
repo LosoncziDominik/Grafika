@@ -23,7 +23,7 @@
 
 
 /**
- * Boid position and speed
+ * Data of Boid
  */
 typedef struct {
     float x, y;
@@ -31,6 +31,9 @@ typedef struct {
     bool alive;
 } Boid;
 
+/**
+ * Data of Player
+ */
 typedef struct {
     float x, y;
     float vx, vy;
@@ -38,45 +41,67 @@ typedef struct {
     int counter;
 } Player;
 
+/**
+ * Data of Blood
+ */
 typedef struct{
     float x, y;
-    SDL_Color color;
     bool active;
 } Blood;
-
-extern SDL_Event event;
-
-extern Player player;
-
-extern Boid boids[NUM_BOIDS];
 
 /**
  * Move the boid to the given position
  */
 void init_boids();
 
+/**
+ * Move the player to the starting position
+ */
 void init_player();
 
+/**
+ * Updates the player's behaveior
+ */
 void update_player();
 
 /**
- * Updating the boid's behavior
+ * Updates the boid's behavior
  */
 void update_boids(SDL_Renderer* renderer);
 
 /**
- * Rendering the screen
+ * Renders the boids
  */
 void render_boids(SDL_Renderer* renderer);
 
+/**
+ * Renders the player
+ */
 void render_player(SDL_Renderer* renderer);
 
+/**
+ * If an object passes the screen length it will come out of the other side
+ */
 void warp(float* x, float* y);
 
+/**
+ * Draws the player's score
+ */
 void draw_score(SDL_Renderer* renderer, const char* score, int x, int y, TTF_Font* font, SDL_Color color);
 
-int scoreCounter();
+/**
+ * Counts how many boids have been killed
+ */
+int score_counter();
 
+/**
+ * Renders the blood droplets
+ */
 void render_blood(SDL_Renderer* renderer);
+
+/**
+ * Getter function for the player's score
+ */
+int get_player_score();
 
 #endif

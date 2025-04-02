@@ -102,7 +102,6 @@ void update_boids(SDL_Renderer* renderer) {
 
         if (fabs(boids[i].x - player.x ) < 10 && fabs(boids[i].y - player.y ) < 10){
             boids[i].alive = false;
-            //blood(renderer, &boids[i].x, &boids[i].y);
 
             if(bloodCount < MAX_BLOOD){
                 blood_drops[bloodCount].x = boids[i].x + rand() % 10 - 3;;
@@ -128,7 +127,6 @@ void update_player() {
 
     float norm = sqrt(vx * vx + vy * vy);
     if (norm > 0) {
-        // Normalizálás és sebesség hozzárendelés
         vx = (vx / norm) * PLAYER_SPEED;
         vy = (vy / norm) * PLAYER_SPEED;
 
@@ -144,7 +142,7 @@ void update_player() {
 
     warp(&player.x, &player.y);
 
-    player.counter = scoreCounter();
+    player.counter = score_counter();
 }
 
 
@@ -198,10 +196,10 @@ void draw_score(SDL_Renderer* renderer, const char* score, int x, int y, TTF_Fon
     SDL_DestroyTexture(texture);
 }
 
-int scoreCounter(){
+int score_counter(){
     int counter = 0;
 
-    for(int i =0; i < NUM_BOIDS; i++) if(!boids[i].alive) counter++;
+    for(int i = 0; i < NUM_BOIDS; i++) if(!boids[i].alive) counter++;
 
     return counter;
 }
@@ -218,4 +216,8 @@ void render_blood(SDL_Renderer* renderer){
             }
         }
     }
+}
+
+    int get_player_score(){
+    return player.counter;
 }
