@@ -6,7 +6,7 @@ Ez a projekt egy **boid algoritmust** mutat be, ahol a felhasználó irányítan
 
 - Valós idejű boid szimuláció
 - Billentyűzettel irányítható egy kiválasztott boid
-- Grafikus megjelenítés SDL2-ben
+- Minimalista grafikus megjelenítés SDL2-ben
 
 ## Követelmények
 
@@ -17,8 +17,13 @@ Ez a projekt egy **boid algoritmust** mutat be, ahol a felhasználó irányítan
 
 - [x] Boid algoritmus implementálása
 - [ ] Akadályok létrehozása és kezelése 
-- [ ] Player boid implementálása
+- [x] Player boid implementálása
 - [ ] Felhasználói felület létrehozása
+
+## Assets
+
+- Az assetek legyenek ugyan abban a mappában, mint a többi file.
+- **https://drive.google.com/drive/folders/13ERKN3sApPU-pHCgUZ5b99KhewzjwvRP?usp=sharing**
 
 ## Fordítás
 
