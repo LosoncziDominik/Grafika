@@ -6,8 +6,6 @@
 #endif
 #include <GL/glu.h>
 
-Camera camera;
-
 int main(int argc, char* argv[]) {
     SDL_Init(SDL_INIT_VIDEO);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -27,77 +25,89 @@ int main(int argc, char* argv[]) {
 
     glMatrixMode(GL_MODELVIEW);
 
-
-    glEnable(GL_DEPTH_TEST);
     glClearColor(0.2f, 0.7f, 0.4f, 1.0f);
 
     SDL_SetRelativeMouseMode(SDL_TRUE);
 
-
-    init_camera(&camera);
+    init_camera();
     init_boids();
     init_torus();
+
+    init_textures();
+    init_particles();
 
     bool running = true;
     SDL_Event event;
 
+    Uint32 lastTime = SDL_GetTicks();
+    set_timer(lastTime);
+
+
     while (running) {
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_QUIT || 
-            (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
-            running = false;
-        }
-
-        if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_TAB) {
-                whatspeed();
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT || 
+                (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
+                running = false;
             }
+
+            if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_TAB) {
+                    whatspeed();
+                }
+                if (event.key.keysym.sym == SDLK_1)
+                {
+                    fog_setter();
+                }
+                if (event.key.keysym.sym == SDLK_2)
+                {
+                    apply_water_setter();
+                }
+                if (event.key.keysym.sym == SDLK_3)
+                {
+                    debug_setter();
+                }
+            } 
         }
+
+        int mouseX, mouseY;
+        SDL_GetRelativeMouseState(&mouseX, &mouseY);
+        const Uint8* keystates = SDL_GetKeyboardState(NULL);
+
+        update_camera(keystates, mouseX, mouseY);
+        update_boids();
+        render_fog();
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+        set_camera_view();
+
+        draw_sky_plane(get_timer());
+
+        for (int i = 0; i < 3; i++) {
+            glPushMatrix();
+            glColor3f(1, 0, 1);
+            glTranslatef(get_center(i).x, get_center(i).y, get_center(i).z);
+            create_donut_shape(i);
+            glPopMatrix();
+        }    
+
+        render_boids();
+
+        update_particles(get_timer()); 
+        render_particles();
+
+        draw_plane(10, 0, 0);
+        draw_bounds();
+        draw_water_cube();
+
+        
+      
+        SDL_GL_SwapWindow(window);
+        SDL_Delay(16);
     }
 
-    int mouseX, mouseY;
-    SDL_GetRelativeMouseState(&mouseX, &mouseY);
-    const Uint8* keystates = SDL_GetKeyboardState(NULL);
-
-    update_camera(&camera, keystates, mouseX, mouseY);
-    update_boids();
-
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    set_camera_view(&camera);
-
-    glPushMatrix();
-    glTranslatef(0, 0, 0);
-    glBegin(GL_TRIANGLES);
-        glColor3f(1, 1, 0);
-        glVertex3f(-1, -1, 0);
-        glVertex3f( 1, -1, 0);
-        glVertex3f( 0,  1, 0);
-    glEnd();
-    glPopMatrix();
-
-
-    
-    for (int i = 0; i < 3; i++) {
-        glPushMatrix();
-        //glColor3f(1, 0, 1);
-        glTranslatef(get_torus_x(i), get_torus_y(i), get_torus_z(i));
-        create_donut_shape(i);
-        glPopMatrix();
-    }
-
-    
-    render_boids();
-    draw_plane(10, 0, 0);
-    draw_bounds();
-
-    SDL_GL_SwapWindow(window);
-    SDL_Delay(16);
-}
-
-SDL_GL_DeleteContext(context);
-SDL_DestroyWindow(window);
-SDL_Quit();
-return 0;
+    SDL_GL_DeleteContext(context);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return 0;
 }

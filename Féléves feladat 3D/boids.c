@@ -1,11 +1,15 @@
 #include <math.h>
 #include <stdlib.h>
 #include "boids.h"
+#include "camera.h"
 #include <stdio.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 
 
 Boid boids[NUM_BOIDS];
-Player player;
 Vertex vertices[8][1000];
 Face faces[8][1000];
 int vertex_counts[8] = {0};
@@ -13,16 +17,22 @@ int face_counts[8] = {0};
 Torus torus[3];
 Vec3 boid_pos[NUM_BOIDS];
 Vec3 boid_vel;
+GLuint skyTextureID;
+float skyScroll = 0.0f;
+Particle particles[MAX_PARTICLES];
+GLuint smokeTextureID;
+Uint32 timetime;
+Settings setting;
+
 
 void init_boids() {
     for (int i = 0; i < NUM_BOIDS; i++) {
         boids[i].x = (rand() % SPACE_WIDTH) - SPACE_WIDTH / 2;
         boids[i].y = (rand() % SPACE_HEIGHT) - SPACE_HEIGHT / 2;
         boids[i].z = (rand() % SPACE_DEPTH) - SPACE_DEPTH / 2;
-
-        boids[i].vx = ((float)rand() / RAND_MAX - 0.5f) * 0.3f;
-        boids[i].vy = ((float)rand() / RAND_MAX - 0.5f) * 0.3f;
-        boids[i].vz = ((float)rand() / RAND_MAX - 0.5f) * 0.3f;
+        boids[i].vx = ((float)rand() / RAND_MAX - 0.5f);
+        boids[i].vy = ((float)rand() / RAND_MAX - 0.5f);
+        boids[i].vz = ((float)rand() / RAND_MAX - 0.5f);
         boids[i].alive = true;
         boids[i].targetSpeed = MAX_SPEED * (0.7f + (rand() % 5) * 0.01f);
         boids[i].r = (rand() % 9) / 10.0f;
@@ -30,11 +40,8 @@ void init_boids() {
         boids[i].b = (rand() % 9) / 10.0f;
         boids[i].frame_index = rand() % 8;
         boids[i].frame_timer = ((float)rand() / RAND_MAX) * 0.5f;
-
-        boid_pos[i].x = boids[i].x;
-        boid_pos[i].y = boids[i].y;
-        boid_pos[i].z = boids[i].z;
-
+        boids[i].avoiding_timer = 0.0f;
+        boids[i].collision = false;
     }
 
     load_obj("hal.obj", 0);
@@ -45,15 +52,6 @@ void init_boids() {
     load_obj("hal1.obj", 5);
     load_obj("hal2.obj", 6);
     load_obj("hal1.obj", 7);
-}
-
-void init_player(){
-    player.x = SPACE_WIDTH / 2;
-    player.y = SPACE_HEIGHT * 3 / 4;
-    player.z = SPACE_DEPTH * 4 / 5;
-    player.vx = 0;
-    player.vy = 0;
-    player.vz = 0;
 }
 
 void init_torus(){
@@ -74,6 +72,13 @@ void init_torus(){
         torus[i].r = 10.0f; 
     }
 }
+
+void init_settings(){
+    setting.fog = false;
+    setting.apply_water = false;
+    setting.debug = false;
+}
+
 
 void update_boids() {
 
@@ -110,10 +115,22 @@ void update_boids() {
 
         float alignWeight = ALIGNMENT_WEIGHT;
         float cohesionWeight = COHESION_WEIGHT;
-        if (count > 0) {
-            alignWeight = ALIGNMENT_WEIGHT / (1.0f + 0.05f * count);
-            cohesionWeight = COHESION_WEIGHT / (1.0f + 0.05f * count);
 
+
+        if (count > 0) {
+
+           
+
+            if (boids[i].avoiding_timer > 0.0f)
+            {
+                alignWeight *= 0.2f;
+                cohesionWeight *= 0.2f;
+            }
+            else {
+                alignWeight = ALIGNMENT_WEIGHT / (1.0f + 0.05f * count);
+                cohesionWeight = COHESION_WEIGHT / (1.0f + 0.05f * count);
+            }
+            
             avgX /= count;
             avgY /= count;
             avgZ /= count;
@@ -169,9 +186,64 @@ void update_boids() {
             boids[i].vy *= (1 - SPEED_SMOOTHING);
             boids[i].vz *= (1 - SPEED_SMOOTHING);
         }
-        boid_pos[i].x = boids[i].x;
-        boid_pos[i].y = boids[i].y;
-        boid_pos[i].z = boids[i].z;
+
+        Vec3 origin = { boids[i].x, boids[i].y, boids[i].z };
+        Vec3 dir = vec3_normalize((Vec3){ boids[i].vx, boids[i].vy, boids[i].vz });
+
+        boids[i].collision = false;
+
+        for (int h = 0; h < 3; h++) {
+            if (check_ray_torus_collision(origin, dir, torus[h], 30.0f)) {
+                boids[i].collision = true;
+                break;
+            }
+        }
+
+        /*if (collision && boids[i].avoiding_timer <= 0.0f) {
+            // Torus középpont – boid pozíció
+            Vec3 boid_pos = { boids[i].x, boids[i].y, boids[i].z };
+        
+            // (az a torusz kell, amelyikkel épp ütközött – itt az első találtra használjuk)
+            // Ha több toruszba is beleütközhet, érdemes azt eltárolni korábban
+            Vec3 torus_center = { torus[0].x, torus[0].y, torus[0].z };  // <- vagy a tényleges
+            // opcionálisan: iterációban mentsd el a `collided_index = h;` értéket
+        
+            // 1. számoljuk az "away" vektort
+            Vec3 away = vec3_normalize(vec3_sub(boid_pos, torus_center));
+        
+            // 2. kis eltolás az irányából
+            float push_strength = 0.8f; // tetszés szerint
+            boids[i].vx += away.x * push_strength;
+            boids[i].vy += away.y * push_strength;
+            boids[i].vz += away.z * push_strength;
+        
+            // 3. (opcionális) kis véletlenszerű szögelfordítás, hogy ne legyen merev
+            float angle = ((rand() % 100) / 100.0f - 0.5f) * (M_PI / 4.0f); // ±45°
+            float old_vx = boids[i].vx;
+            float old_vz = boids[i].vz;
+        
+            boids[i].vx = old_vx * cosf(angle) - old_vz * sinf(angle);
+            boids[i].vz = old_vx * sinf(angle) + old_vz * cosf(angle);
+        
+            // 4. időzár
+            boids[i].avoiding_timer = 0.8f;
+        }*/
+
+        if (boids[i].collision && boids[i].avoiding_timer <= 0.0f) {
+            Vec3 origin = { boids[i].x, boids[i].y, boids[i].z };
+            Vec3 forward = vec3_normalize((Vec3){ boids[i].vx, boids[i].vy, boids[i].vz });
+        
+            Vec3 safe_dir = find_free_direction(origin, forward, torus, 3, 30.0f);
+        
+            boids[i].vx = safe_dir.x * MAX_SPEED + 5;
+            boids[i].vy = safe_dir.y * MAX_SPEED + 5;
+            boids[i].vz = safe_dir.z * MAX_SPEED + 5;
+        
+            boids[i].avoiding_timer = 0.8f;
+        }
+        
+        boids[i].avoiding_timer -= get_timer();
+        if (boids[i].avoiding_timer < 0.0f) boids[i].avoiding_timer = 0.0f;
 
         boids[i].x += boids[i].vx;
         boids[i].y += boids[i].vy;
@@ -182,67 +254,118 @@ void update_boids() {
             boids[i].frame_index = (boids[i].frame_index + 1) % 8;
             boids[i].frame_timer = 0.2f + ((float)rand() / RAND_MAX) * 0.3f;
         }
-        /*for (int k = 0; k < 3; k++)
-        {
-            Vec3 steer = avoid_torus(boid_pos[i], get_boid_vel(i), get_center(k), torus[k].R, torus[k].r);
-            boids[i].vx += steer.x;
-            boids[i].vy += steer.y;
-            boids[i].vz += steer.z;
-        }*/
-        
-        
+
     }
 }
 
+void init_particles() {
+
+    for (int i = 0; i < MAX_PARTICLES; i++) {
+        particles[i].x = ((rand() % SPACE_WIDTH) - SPACE_WIDTH / 2.0f);
+        particles[i].y = ((rand() % SPACE_HEIGHT) - SPACE_HEIGHT / 2.0f);
+        particles[i].z = ((rand() % SPACE_DEPTH) - SPACE_DEPTH / 2.0f);
+
+        particles[i].vx = ((rand() % 100) - 50) / 5000.0f;
+        particles[i].vy = ((rand() % 50) / 1000.0f) + 0.01f;
+        particles[i].vz = ((rand() % 100) - 50) / 5000.0f;
+
+        particles[i].lifetime = (rand() % 1000) / 100.0f + 1.0f;
+        particles[i].size = (rand() % 10) / 10.0f + 0.5f;
+    }
+}
+
+void update_particles(float deltaTime) {
+    for (int i = 0; i < MAX_PARTICLES; i++) {
+        particles[i].x += particles[i].vx * deltaTime * 100;
+        particles[i].y += particles[i].vy * deltaTime * 100;
+        particles[i].z += particles[i].vz * deltaTime * 100;
+
+        particles[i].lifetime -= deltaTime;
+
+        bool outOfBounds =
+            fabsf(particles[i].x) > SPACE_WIDTH ||
+            fabsf(particles[i].y) > SPACE_HEIGHT ||
+            fabsf(particles[i].z) > SPACE_DEPTH;
+
+        if (particles[i].lifetime <= 0.0f || outOfBounds) {
+            particles[i].x = ((rand() % SPACE_WIDTH) - SPACE_WIDTH / 2.0f);
+            particles[i].y = ((rand() % SPACE_HEIGHT) - SPACE_HEIGHT / 2.0f);
+            particles[i].z = ((rand() % SPACE_DEPTH) - SPACE_DEPTH / 2.0f);
+
+            particles[i].vx = ((rand() % 100) - 50) / 10000.0f;
+            particles[i].vy = (rand() % 50) / 1000.0f + 0.05f;
+            particles[i].vz = ((rand() % 100) - 50) / 10000.0f;
+            
+
+            particles[i].lifetime = (rand() % 100) / 100.0f + 1.0f;
+            particles[i].size = (rand() % 10) / 100.0f + 0.5f;
+        }
+    }
+}
+
+
+void render_particles() {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, smokeTextureID);
+
+    for (int i = 0; i < MAX_PARTICLES; i++) {
+        float alpha = particles[i].lifetime / 1.5f;
+
+        glColor4f(1.0f, 1.0f, 1.0f, alpha);
+
+        float size = particles[i].size / 2.0f;
+
+        glPushMatrix();
+        glTranslatef(particles[i].x, particles[i].y, particles[i].z);
+
+        glBegin(GL_QUADS);
+            glTexCoord2f(0, 0); glVertex3f(-size, -size, 0);
+            glTexCoord2f(1, 0); glVertex3f( size, -size, 0);
+            glTexCoord2f(1, 1); glVertex3f( size,  size, 0);
+            glTexCoord2f(0, 1); glVertex3f(-size,  size, 0);
+        glEnd();
+
+        glPopMatrix();
+    }
+
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+}
+
 void wrap_boid(Boid* b) {
-    if (b->x < -SPACE_WIDTH / 2)  b->x += SPACE_WIDTH;
-    if (b->x >  SPACE_WIDTH / 2)  b->x -= SPACE_WIDTH;
+    if (b->x < -SPACE_WIDTH / 2)  b->x += SPACE_WIDTH * 2;
+    if (b->x >  SPACE_WIDTH / 2)  b->x -= SPACE_WIDTH * 2;
 
-    if (b->y < -SPACE_HEIGHT / 2) b->y += SPACE_HEIGHT;
-    if (b->y >  SPACE_HEIGHT / 2) b->y -= SPACE_HEIGHT;
+    if (b->y < -SPACE_HEIGHT / 2) b->y += SPACE_HEIGHT * 2;
+    if (b->y >  SPACE_HEIGHT / 2) b->y -= SPACE_HEIGHT * 2;
 
-    if (b->z < -SPACE_DEPTH / 2)  b->z += SPACE_DEPTH;
-    if (b->z >  SPACE_DEPTH / 2)  b->z -= SPACE_DEPTH;
+    if (b->z < -SPACE_DEPTH / 2)  b->z += SPACE_DEPTH * 2;
+    if (b->z >  SPACE_DEPTH / 2)  b->z -= SPACE_DEPTH * 2;
 }
 
-
-int score_counter(){
-    int counter = 0;
-
-    for(int i = 0; i < NUM_BOIDS; i++) if(!boids[i].alive) counter++;
-
-    return counter;
-}
-
-int get_player_score(){
-    return player.counter;
-}
 
 void render_boids() {
     for (int i = 0; i < NUM_BOIDS; i++) {
         if (!boids[i].alive) continue;
+        
+        Vec3 vel = { boids[i].vx, boids[i].vy, boids[i].vz };
+        Vec3 dir = vec3_normalize(vel);
 
-        float angleY = atan2(boids[i].vx, boids[i].vz) * 180.0f / M_PI;
+        float yaw = atan2f(dir.x, dir.z) * 180.0f / M_PI;
+        float pitch = -asinf(dir.y) * 180.0f / M_PI;
 
-        render_model_instance(boids[i].x, boids[i].y, boids[i].z, angleY, i);
+        Vec3 boid_pos = { boids[i].x, boids[i].y, boids[i].z };
+        apply_water_color(boid_pos, i);
 
-        /*for (int k = 0; k < 3; k++) {
-            Vec3 pos = boid_pos[i];
-            Vec3 vel = get_boid_vel(i);
-            Vec3 steer = avoid_torus(pos, vel, get_center(k), torus[k].R, torus[k].r);
-    
-            if (vec3_length(steer) > 0.01f) {
-                glColor3f(1, 0, 0); // piros vonal
-                glBegin(GL_LINES);
-                glVertex3f(pos.x, pos.y, pos.z);
-                glVertex3f(pos.x - steer.x, pos.y - steer.y, pos.z - steer.z);
-                glEnd();
-            }
+        Vec3 color = {1.0f, 0.0f, 0.0f};
+        if (boids[i].collision)
+        {
+            draw_ray(boid_pos, dir, 30.0f, color);
         }
-    
-        for (int i = 0; i < 3; i++) {
-            draw_torus_debug_wire(i);
-        }*/
+        
+        render_model_instance(boids[i].x, boids[i].y, boids[i].z, yaw, pitch, i);
     }
 }
 
@@ -333,13 +456,18 @@ void load_obj(const char* filename, int index) {
     fclose(file);
 }
 
-void render_model_instance(float x, float y, float z, float angle, int index) {
+void render_model_instance(float x, float y, float z, float yaw, float pitch, int index) {
     int frame = boids[index].frame_index + boids[index].frame_timer;
+
 
     glPushMatrix();
     glTranslatef(x, y, z);
-    glRotatef(angle, 0, 1, 0);
+    glRotatef(yaw, 0, 1, 0);
+    glRotatef(pitch, 1, 0, 0);
     glColor3f(boids[index].r, boids[index].g, boids[index].b);
+    Vec3 boid_pos = { boids[index].x, boids[index].y, boids[index].z };
+    apply_water_color(boid_pos, index);
+
 
     glBegin(GL_TRIANGLES);
     for (int i = 0; i < face_counts[frame]; i++) {
@@ -370,7 +498,6 @@ void create_donut_shape(int index) {
             float phi = 2.0f * M_PI * k / numSides;
             float nextPhi = 2.0f * M_PI * (k + 1) / numSides;
 
-            // Négy szomszédos pont a torusz felületén
             float x0 = (R + r * cos(phi)) * cos(theta);
             float y0 = (R + r * cos(phi)) * sin(theta);
             float z0 = r * sin(phi);
@@ -398,18 +525,6 @@ void create_donut_shape(int index) {
             glEnd();
         }
     }   
-}
-
-int get_torus_x(int index){
-    return torus[index].x;
-}
-
-int get_torus_y(int index){
-    return torus[index].y;
-}
-
-int get_torus_z(int index){
-    return torus[index].z;
 }
 
 Vec3 get_center(int index)
@@ -455,104 +570,268 @@ Vec3 vec3_normalize(Vec3 v) {
     return (Vec3){0, 0, 0};
 }
 
-Vec3 avoid_torus(Vec3 boidPos, Vec3 boidVel, Vec3 torusCenter, float R, float r) {
-    Vec3 rel = vec3_sub(boidPos, torusCenter);
-
-    // síkbeli távolság a torusz középponttól (XZ sík)
-    float flatX = rel.x;
-    float flatZ = rel.z;
-    float flatLen = sqrtf(flatX * flatX + flatZ * flatZ);
-
-    // három feltétel: a boid a torusz testében van?
-    bool inside_outer_wall = flatLen < (R + r);
-    bool inside_inner_wall = flatLen > (R - r);
-    bool inside_vertical   = fabsf(rel.y) < r;
-
-    if (inside_inner_wall && inside_outer_wall && inside_vertical) {
-        // A boid benne van a torusz testében → taszító erő
-
-        // irány a torusz körkörös falából kifelé
-        float len = sqrtf(flatX * flatX + flatZ * flatZ);
-        Vec3 ringNormal = (len > 0.0001f)
-            ? (Vec3){flatX / len, 0, flatZ / len}
-            : (Vec3){1, 0, 0};
-
-        // legközelebbi pont a torusz "forgáskörén"
-        Vec3 ringCenter = vec3_add(torusCenter, vec3_mul(ringNormal, R));
-
-        // taszítás iránya: boid → körív
-        Vec3 fromRing = vec3_sub(boidPos, ringCenter);
-
-        // opcionálisan: rajzolj piros vonalat a taszítás irányába
-        glColor3f(1.0f, 0.0f, 0.0f);
-        glBegin(GL_LINES);
-        glVertex3f(boidPos.x, boidPos.y, boidPos.z);
-        glVertex3f(boidPos.x + fromRing.x, boidPos.y + fromRing.y, boidPos.z + fromRing.z);
-        glEnd();
-
-        return vec3_mul(vec3_normalize(fromRing), 5.5f);
-    }
-
-    // ha a boid szemből repül a lyukba, ne taszítsuk
-    Vec3 toCenter = vec3_normalize(vec3_sub(torusCenter, boidPos));
-    float alignment = vec3_dot(vec3_normalize(boidVel), toCenter);
-
-    if (alignment > 0.9f && flatLen > (R - r) && flatLen < (R + r)) {
-        return (Vec3){0, 0, 0};
-    }
-
-    // nem kell semmit csinálni
-    return (Vec3){0, 0, 0};
+float vec3_distance(Vec3 a, Vec3 b) {
+    float dx = a.x - b.x;
+    float dy = a.y - b.y;
+    float dz = a.z - b.z;
+    return sqrtf(dx*dx + dy*dy + dz*dz);
 }
 
-void draw_torus_debug_wire(int index) {
-    int numSides = 32;
-    int numRings = 32;
+Vec3 vec3_scale(Vec3 v, float s) {
+    return (Vec3){v.x * s, v.y * s, v.z * s};
+}
 
-    float R = torus[index].R;
-    float r = torus[index].r;
-    float cx = torus[index].x;
-    float cy = torus[index].y;
-    float cz = torus[index].z;
+void apply_water_color(Vec3 pos, int index) {
+    if (setting.apply_water)
+    {
+        float dx = pos.x - get_camera_x();
+        float dy = pos.y - get_camera_y();
+        float dz = pos.z - get_camera_z();
+    
+        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
+        if(dist > 40){
+    
+        float maxDist = 200.0f;
+    
+        float t = fminf((dist - 40) / maxDist, 1.0f);
+    
+        float r = (boids[index].r - t) * boids[index].r + t * 0.2f;
+        float g = (boids[index].g - t) * boids[index].g + t * 0.4f;
+        float b = (boids[index].b - t) * boids[index].b + t * 1.0f;
+    
+        glColor3f(r, g, b);
+        }
+    }
+    
+    
+    
+}
 
-    glColor3f(0.2f, 1.0f, 0.2f); // világoszöld szín a drótkerethez
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); // csak vonalak
 
-    for (int j = 0; j < numRings; ++j) {
-        float theta = 2.0f * M_PI * j / numRings;
-        float nextTheta = 2.0f * M_PI * (j + 1) / numRings;
+GLuint load_texture(const char* filename) {
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
+    if (!data) {
+        printf("Failed to load texture: %s\n", filename);
+        exit(1);
+    }
 
-        for (int k = 0; k < numSides; ++k) {
-            float phi = 2.0f * M_PI * k / numSides;
-            float nextPhi = 2.0f * M_PI * (k + 1) / numSides;
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
 
-            float x0 = (R + r * cosf(phi)) * cosf(theta) + cx;
-            float y0 = (R + r * cosf(phi)) * sinf(theta) + cy;
-            float z0 = r * sinf(phi) + cz;
+    GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
 
-            float x1 = (R + r * cosf(nextPhi)) * cosf(theta) + cx;
-            float y1 = (R + r * cosf(nextPhi)) * sinf(theta) + cy;
-            float z1 = r * sinf(nextPhi) + cz;
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
 
-            float x2 = (R + r * cosf(nextPhi)) * cosf(nextTheta) + cx;
-            float y2 = (R + r * cosf(nextPhi)) * sinf(nextTheta) + cy;
-            float z2 = r * sinf(nextPhi) + cz;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); 
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-            float x3 = (R + r * cosf(phi)) * cosf(nextTheta) + cx;
-            float y3 = (R + r * cosf(phi)) * sinf(nextTheta) + cy;
-            float z3 = r * sinf(phi) + cz;
+    glGenerateMipmap(GL_TEXTURE_2D);
 
-            glBegin(GL_LINE_LOOP);
-            glVertex3f(x0, y0, z0);
-            glVertex3f(x1, y1, z1);
-            glVertex3f(x2, y2, z2);
-            glVertex3f(x3, y3, z3);
-            glEnd();
+    stbi_image_free(data);
+
+    return textureID;
+}
+
+void init_textures() {
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_TEXTURE_2D);
+    skyTextureID = load_texture("sky.png");
+}
+
+GLuint get_skytexture(){
+    return skyTextureID;
+}
+
+void draw_sky_plane(float dt) {
+    skyScroll += dt * 0.02f;
+    if (skyScroll > 1.0f) skyScroll -= 1.0f;
+
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, skyTextureID);
+
+    glColor3f(1, 1, 1);
+
+    glPushMatrix();
+    glTranslatef(0.0f, 500.0f, 0.0f);
+
+    float size = 10000.0f;
+    float repeat = 30.0f;
+
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f + skyScroll, 0.0f); glVertex3f(-size, 0, -size);
+        glTexCoord2f(repeat + skyScroll, 0.0f); glVertex3f( size, 0, -size);
+        glTexCoord2f(repeat + skyScroll, repeat); glVertex3f( size, 0,  size);
+        glTexCoord2f(0.0f + skyScroll, repeat); glVertex3f(-size, 0,  size);
+    glEnd();
+
+    glPopMatrix();
+
+    glDisable(GL_TEXTURE_2D);
+}
+
+
+void draw_water_cube() {
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.2f, 0.5f, 1.0f, 0.7f);
+
+    float w = SPACE_WIDTH / 2.0f;
+    float h = SPACE_HEIGHT / 2.0f;
+    float d = SPACE_DEPTH / 2.0f;
+
+    glBegin(GL_QUADS);
+
+    glVertex3f(-w, -h,  d); glVertex3f(w, -h,  d); glVertex3f(w, h,  d); glVertex3f(-w, h,  d);
+
+    glVertex3f(-w, -h, -d); glVertex3f(-w, h, -d); glVertex3f(w, h, -d); glVertex3f(w, -h, -d);
+
+    glVertex3f(-w, -h, -d); glVertex3f(-w, -h,  d); glVertex3f(-w, h,  d); glVertex3f(-w, h, -d);
+
+    glVertex3f(w, -h, -d); glVertex3f(w, h, -d); glVertex3f(w, h,  d); glVertex3f(w, -h,  d);
+
+    glVertex3f(-w, -h, -d); glVertex3f(w, -h, -d); glVertex3f(w, -h,  d); glVertex3f(-w, -h,  d);
+
+    glVertex3f(-w, h, -d); glVertex3f(-w, h,  d); glVertex3f(w, h,  d); glVertex3f(w, h, -d);
+    glEnd();
+
+    glDisable(GL_BLEND);
+}
+
+/*
+bool ray_hits_torus(Vec3 origin, Vec3 dir, Vec3 torus_center, float R, float r, float max_dist) {
+    Vec3 hit;
+    hit.x = origin.x + dir.x * max_dist;
+    hit.y = origin.y + dir.y * max_dist;
+    hit.z = origin.z + dir.z * max_dist;
+
+    float dx = hit.x - torus_center.x;
+    float dz = hit.z - torus_center.z;
+    float plane_dist = sqrtf(dx * dx + dz * dz);
+
+    float diff = fabsf(plane_dist - R);
+
+    float dy = fabsf(hit.y - torus_center.y);
+
+    if (diff < r && dy < r) {
+        return true;
+    }
+    return false;
+}*/
+
+
+bool check_ray_torus_collision(Vec3 ray_origin, Vec3 ray_dir, Torus t, float max_distance) {
+    int steps = 10;
+    float step_size = max_distance / (float)steps;
+
+    for (int i = 1; i <= steps; ++i) {
+        float t_step = i * step_size;
+        Vec3 point = vec3_add(ray_origin, vec3_scale(ray_dir, t_step));
+
+        float dx = point.x - t.x;
+        float dz = point.z - t.z;
+        float dist_xz = sqrtf(dx * dx + dz * dz);
+
+        float circle_diff = fabsf(dist_xz - t.R+2);
+
+        float dy = fabsf(point.y - t.y);
+
+        if (circle_diff < t.r && dy < t.r) {
+            return true;
         }
     }
 
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); // visszaállítjuk a normál rajzolást
+    return false;
 }
 
+void set_timer(Uint32 time){
+    timetime = time;
+}
 
+float get_timer(){
+    Uint32 currentTime = SDL_GetTicks();
+    float deltaTime = (currentTime - timetime) / 1000.0f;
+    timetime = currentTime;
 
+    return deltaTime;
+}
+
+Vec3 find_free_direction(Vec3 origin, Vec3 forward, Torus* toruses, int torusCount, float max_distance) {
+    Vec3 directions[NUM_DIRECTIONS] = {
+        { 1,  0,  0 },
+        {-1,  0,  0 },
+        { 0,  0,  1 },
+        { 0,  0, -1 },
+        { 0.707f, 0,  0.707f },
+        {-0.707f, 0,  0.707f },
+        { 0.707f, 0, -0.707f },
+        {-0.707f, 0, -0.707f }
+    };
+
+    for (int i = 0; i < NUM_DIRECTIONS; ++i) {
+        Vec3 dir = vec3_normalize(directions[i]);
+        bool isSafe = true;
+
+        for (int h = 0; h < torusCount; ++h) {
+            if (check_ray_torus_collision(origin, dir, toruses[h], max_distance)) {
+                isSafe = false;
+                break;
+            }
+        }
+
+        if (isSafe) {
+            return dir;
+        }
+    }
+
+    return forward;
+}
+
+void draw_ray(Vec3 origin, Vec3 direction, float length, Vec3 color) {
+    if(setting.debug){
+
+        Vec3 end = {
+            origin.x + direction.x * length,
+            origin.y + direction.y * length,
+            origin.z + direction.z * length
+        };
+    
+        glColor3f(color.x, color.y, color.z);
+        glBegin(GL_LINES);
+            glVertex3f(origin.x, origin.y, origin.z);
+            glVertex3f(end.x, end.y, end.z);
+        glEnd();
+    }
+    
+}
+
+void render_fog(){
+    if (setting.fog)
+    {
+        GLfloat fogColor[4] = {0.4f, 0.6f, 0.95f, 1.0f};
+        glEnable(GL_FOG);
+        glFogfv(GL_FOG_COLOR, fogColor);
+        glFogf(GL_FOG_DENSITY, 0.01f);
+        glFogi(GL_FOG_MODE, GL_EXP2);
+    }
+    else{
+        glDisable(GL_FOG);
+    }
+ 
+}
+
+void fog_setter(){
+    setting.fog = !setting.fog;
+}
+
+void apply_water_setter(){
+    setting.apply_water = !setting.apply_water;
+}
+
+void debug_setter(){
+    setting.debug = !setting.debug;
+}
