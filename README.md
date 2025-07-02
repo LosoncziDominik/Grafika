@@ -38,7 +38,7 @@ Ez a projekt egy **boid algoritmust** mutat be, ahol a felhasználó irányítan
 
 ## Guide (F1)
 
-Controls:
+Írányítás:
 - W - felfelé mozgás
 - S - lefelé mozgás
 - D - jobbra mozgás
@@ -56,5 +56,7 @@ Controls:
 
 ## Fordítás
 
-```bash
+Fordításhoz szükséges csomagok: opengl glu, opengl glad, sdl2, stb_image
+```cmd
 make
+opengl.exe
